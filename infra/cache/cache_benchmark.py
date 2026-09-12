@@ -13,7 +13,7 @@ import random
 from itertools import product
 from typing import Any, Dict, List
 
-from infra.cache.semantic_cache import SemanticCache
+from infra.cache.semantic_cache import CACHE_PREFIX, SemanticCache
 
 _POOL_TEMPLATES = [
     "What is the refund policy for order {n}?",

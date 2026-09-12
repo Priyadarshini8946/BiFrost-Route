@@ -85,7 +85,7 @@ def test_embedder_identity_and_rephrase():
 def test_live_redis_ping():
     from infra.cache.semantic_cache import SemanticCache, TfidfEmbedder
 
-    cache = SemanticCache(embedder=TfidfEmbedder().fit(["a", "b", "c"]))
+    cache = SemanticCache(embedder=TfidfEmbedder().fit(["alpha beta gamma", "delta epsilon zeta"]))
     assert cache.r.ping()
 
 

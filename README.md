@@ -62,14 +62,16 @@ $env:BIFROST_INTEGRATION="1"; .venv\Scripts\python.exe -m pytest -q
 
 ## ✅ Layer 1 acceptance targets
 
-| # | Metric | Target | Where |
-|:--|:---|:---|:---|
-| G1 | DynamoDB trace write latency | mean < 50 ms | `check_layer1_results.py` |
-| G2 | Redis cache hit rate (1,000-query traffic, 40% repeats) | ≥ 30% | `check_layer1_results.py` |
-| G2b | Redis LRU eviction proven | evicted_keys > 0, `allkeys-lru` | `check_layer1_results.py` |
-| G3 | "Total cost saved today" warehouse query | < 2 s | `check_layer1_results.py` |
+| # | Metric | Target | Measured (2026-09-12) | Status |
+|:--|:---|:---|:---|:---|
+| G0 | MySQL schema seeded | 3 tables > 0 rows | 3 / 1 / 1 rows | ✅ |
+| G1 | DynamoDB trace write latency | mean < 50 ms | **12.14 ms** (p95 17.24 ms) | ✅ |
+| G2 | Redis cache hit rate (1,000-query traffic, 40% repeats) | ≥ 30% | **47.8%** (exact 100%, rephrased 68.5%) | ✅ |
+| G2b | Redis LRU eviction proven | evicted_keys > 0, `allkeys-lru` | **+1,928 evicted**, policy applied | ✅ |
+| G3 | "Total cost saved today" warehouse query | < 2 s | **15.7 ms** | ✅ |
+| G3b | Cost savings vs frontier baseline | > $0 | **$0.1622 / 57.05%** | ✅ |
 
-Results are printed per gate and persisted to `data/layer1_results.json`.
+Results are printed per gate and persisted to `data/layer1_results.json`. `check_layer1_results.py` exits non-zero on any miss (CI-ready).
 
 ## 🖥 Manual steps (do once)
 

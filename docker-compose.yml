@@ -47,6 +47,9 @@ services:
     image: amazon/dynamodb-local:latest
     container_name: bifrost-dynamodb
     restart: unless-stopped
+    # Image JVM runs as non-root `dynamodblocal` and cannot write the named
+    # volume; run as root (documented fix for volume-mounted databases).
+    user: root
     ports:
       - "8000:8000"
     volumes:

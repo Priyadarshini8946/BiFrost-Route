@@ -23,6 +23,11 @@ from typing import Any, Dict, List
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# Windows consoles default to cp1252 — force UTF-8 so arrows/box drawing survive.
+for stream in (sys.stdout, sys.stderr):
+    if stream is not None and hasattr(stream, "reconfigure"):
+        stream.reconfigure(encoding="utf-8", errors="replace")
+
 from tabulate import tabulate  # noqa: E402
 
 from infra.cache.cache_benchmark import (  # noqa: E402

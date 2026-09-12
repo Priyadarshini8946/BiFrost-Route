@@ -87,13 +87,13 @@ class SemanticCache:
         """Semantic lookup. Returns hit/miss + similarity and (on hit) response."""
         vec = self.embedder.embed(query)
         q = (
-            Query(f"*=>[KNN 5 @embedding $vec AS score]")
-            .params_dict({"vec": vec.tobytes()})
+            Query("*=>[KNN 5 @embedding $vec AS score]")
             .sort_by("score")
             .dialect(2)
         )
         try:
-            res = self.r.ft(CACHE_INDEX).search(q)
+            # redis-py >= 8 passes query params at search time, not on Query.
+            res = self.r.ft(CACHE_INDEX).search(q, query_params={"vec": vec.tobytes()})
         except redis.exceptions.ResponseError:
             res = type("R", (), {"docs": []})()  # index empty → no candidates
 

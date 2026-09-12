@@ -34,7 +34,12 @@ def connect() -> "pymysql.Connection":
 
 def apply_schema(max_attempts: int = 30, delay: float = 2.0) -> bool:
     """Apply schema.sql (DDL + idempotent seeds). Retries while MySQL boots."""
+    import re
+
     sql = SCHEMA_PATH.read_text(encoding="utf-8")
+    # Strip `--` line comments BEFORE splitting on ';' — comments may legally
+    # contain semicolons and would otherwise shred the statement stream.
+    sql = re.sub(r"(?m)^\s*--.*$", "", sql)
     statements = [s.strip() for s in sql.split(";") if s.strip()]
     last_err: Exception | None = None
     for attempt in range(1, max_attempts + 1):

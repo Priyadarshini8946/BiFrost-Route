@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS budget_limits (
     PRIMARY KEY (id),
     UNIQUE KEY uq_team_window (team_name, window_start, window_end)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-  COMMENT='Team-level spend caps; router must not exceed when enforced';
+  COMMENT='Team-level spend caps — router must not exceed when enforced';
 
 -- ============================================================================
 -- SEED DATA (idempotent)

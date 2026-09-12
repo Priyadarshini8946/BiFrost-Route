@@ -37,7 +37,7 @@ def create_query_traces_table(force_recreate: bool = False) -> str:
         except client.exceptions.ResourceNotFoundException:
             pass
 
-    existing = [t["TableName"] for t in client.list_tables()["TableNames"]]
+    existing = client.list_tables()["TableNames"]  # list of plain strings
     if name not in existing:
         client.create_table(
             TableName=name,
@@ -87,11 +87,16 @@ def create_query_traces_table(force_recreate: bool = False) -> str:
     client.get_waiter("table_exists").wait(TableName=name)
     # TTL configuration for trace retention (apply after table is active).
     try:
+        ttl_status = client.describe_time_to_live(TableName=name)[
+            "TimeToLiveDescription"
+        ]["TimeToLiveStatus"]
+    except client.exceptions.ResourceNotFoundException:
+        ttl_status = "DISABLED"
+    if ttl_status != "ENABLED":
         client.update_time_to_live(
-            TableName=name, TimeToLiveSpecification={"Enabled": True, "AttributeName": "ttl_epoch"}
+            TableName=name,
+            TimeToLiveSpecification={"Enabled": True, "AttributeName": "ttl_epoch"},
         )
-    except client.exceptions.ResourceInUseException:
-        pass
 
     while True:
         status = client.describe_table(TableName=name)["Table"]["TableStatus"]
