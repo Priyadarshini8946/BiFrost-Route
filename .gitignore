@@ -15,6 +15,7 @@ data/
 *.duckdb
 *.duckdb.wal
 *.parquet
+*.log
 
 # ── Editors / OS ──────────────────────────────────────────
 .vscode/*.log
