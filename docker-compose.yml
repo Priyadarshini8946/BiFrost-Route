@@ -1,0 +1,64 @@
+# ============================================================
+# Bifrost Route · Layer 1 local infrastructure
+#   MySQL 8          → routing_policies, budget_limits, model_registry
+#   Redis Stack      → semantic cache (RediSearch vector KNN + LRU eviction)
+#   DynamoDB Local   → query_traces (traces table, GSIs, on-demand)
+# Run:  docker compose up -d
+# ============================================================
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: bifrost-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: bifrost_dev_password
+      MYSQL_DATABASE: bifrost_route
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      # Applied automatically on first boot; setup scripts re-apply idempotently.
+      - ./infra/db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-pbifrost_dev_password"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis/redis-stack-server:latest   # includes RediSearch (vector KNN)
+    container_name: bifrost-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"   # host 6380 → container 6379 (avoids clash with existing local Redis)
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    container_name: bifrost-dynamodb
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - dynamodb_data:/home/dynamodblocal/data
+    command:
+      - -jar
+      - DynamoDBLocal.jar
+      - -sharedDb
+      - -dbPath
+      - /home/dynamodblocal/data
+
+volumes:
+  mysql_data:
+  redis_data:
+  dynamodb_data:

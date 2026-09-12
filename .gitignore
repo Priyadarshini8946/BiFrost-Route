@@ -1,0 +1,27 @@
+# ── Python ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# ── Secrets / local config ────────────────────────────────
+.env
+*.local
+
+# ── Local data (warehouse, exports, benchmarks) ───────────
+data/
+*.duckdb
+*.duckdb.wal
+*.parquet
+
+# ── Editors / OS ──────────────────────────────────────────
+.vscode/*.log
+.idea/
+.DS_Store
+Thumbs.db
+
+# ── Node (later layers: dashboard) ────────────────────────
+node_modules/
+dist/
