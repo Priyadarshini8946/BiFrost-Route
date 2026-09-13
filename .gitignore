@@ -39,3 +39,7 @@ docwork/.venv/
 docwork/__pycache__/
 data_l2_*.log
 
+
+# Office lock files + scratch probes
+~$*.docx
+debug_l3_classifier.py
