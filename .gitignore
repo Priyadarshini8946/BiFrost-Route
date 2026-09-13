@@ -32,3 +32,10 @@ probe_*.txt
 reranker_probe.txt
 *_debug_queries.txt
 data_l2_*.log
+
+# Large / generated artifacts
+models/
+docwork/.venv/
+docwork/__pycache__/
+data_l2_*.log
+
