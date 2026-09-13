@@ -11,6 +11,7 @@ CPU-friendly: small dataset (~1k), 3 epochs, fp32, batch 16.
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import time
 from pathlib import Path
@@ -65,19 +66,41 @@ def load_dataset() -> Dict[str, Any]:
     return json.loads(DATASET_PATH.read_text(encoding="utf-8"))
 
 
+def dataset_fingerprint() -> str:
+    """Short sha256 of the current dataset — detects stale trained artifacts."""
+    data = load_dataset()
+    payload = json.dumps({"train": data["train"], "eval": data["eval"]},
+                         sort_keys=True).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()[:16]
+
+
+def artifacts_fresh() -> bool:
+    """True when the trained artifacts match the current dataset."""
+    marker = MODEL_DIR / "dataset_marker.txt"
+    if not marker.exists():
+        return False
+    return marker.read_text(encoding="utf-8").strip() == dataset_fingerprint()
+
+
 class ComplexityClassifier:
     """Small wrapper: predict(str) -> (label, confidence). modes:
     'distilbert-torch' | 'distilbert-onnx' | 'tfidf-lr' (fallback).
     """
 
-    def __init__(self, prefer_onnx: bool = True) -> None:
+    def __init__(self, prefer_onnx: bool = True, mode: Optional[str] = None) -> None:
+        """mode: force 'distilbert-onnx' | 'distilbert-torch' | 'tfidf-lr'."""
         self.mode = "none"
         self._pipeline = None
         self._onnx = None
         self._lr = None
         self._vec = None
+        if mode == "tfidf-lr":
+            self._load_lr()
+            return
         if prefer_onnx and ONNX_DIR.exists():
             self._load_onnx()
+        if mode == "distilbert-onnx" and self.mode != "distilbert-onnx":
+            raise RuntimeError("distilbert-onnx requested but unavailable")
         if self.mode == "none" and _HAS_TORCH:
             self._load_torch()
         if self.mode == "none":
@@ -242,6 +265,8 @@ def train(epochs: int = 3, batch_size: int = 16) -> Dict[str, Any]:
     stats = evaluate(classes=CLASSES)
     stats["train_secs"] = round(train_secs, 1)
     stats["onnx_exported"] = onnx_ok
+    (MODEL_DIR / "dataset_marker.txt").write_text(
+        dataset_fingerprint(), encoding="utf-8")
     (MODEL_DIR / "metrics.json").write_text(
         json.dumps(stats, indent=2), encoding="utf-8")
     return stats

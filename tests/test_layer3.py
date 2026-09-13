@@ -38,14 +38,16 @@ def test_all_three_classes_present_in_both_splits():
 
 def test_tfidf_fallback_trains_and_predicts():
     # No training in tests — use artifacts trained by the user's run.
-    from infra.classifier.model import MODEL_DIR
+    from infra.classifier.model import MODEL_DIR, artifacts_fresh
 
     if not (MODEL_DIR / "lr.joblib").exists():
         pytest.skip("trained artifacts missing — run scripts\\train_layer3.py "
                     "(or the cloud trainer) first")
+    if not artifacts_fresh():
+        pytest.skip("artifacts are STALE (dataset changed) — retrain first")
     from infra.classifier.model import ComplexityClassifier
 
-    clf = ComplexityClassifier(prefer_onnx=False)
+    clf = ComplexityClassifier(mode="tfidf-lr")
     assert clf.mode == "tfidf-lr"
     label, conf = clf.classify("how do I reset my password")
     assert label in CLASSES
@@ -53,12 +55,14 @@ def test_tfidf_fallback_trains_and_predicts():
 
 
 def test_tfidf_baseline_beats_chance():
-    from infra.classifier.model import MODEL_DIR
+    from infra.classifier.model import MODEL_DIR, artifacts_fresh
 
     if not (MODEL_DIR / "lr.joblib").exists():
         pytest.skip("trained artifacts missing — train first")
+    if not artifacts_fresh():
+        pytest.skip("artifacts are STALE (dataset changed) — retrain first")
     from infra.classifier.model import ComplexityClassifier, evaluate
 
-    clf = ComplexityClassifier(prefer_onnx=False)
+    clf = ComplexityClassifier(mode="tfidf-lr")
     stats = evaluate(classifier=clf)
     assert stats["accuracy"] >= 0.70, "baseline collapsed"

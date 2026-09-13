@@ -36,6 +36,10 @@ def train_tfidf_lr() -> Path:
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     joblib.dump(vec, MODEL_DIR / "tfidf_vec.joblib")
     joblib.dump(lr, MODEL_DIR / "lr.joblib")
+    from infra.classifier.model import dataset_fingerprint
+
+    (MODEL_DIR / "dataset_marker.txt").write_text(
+        dataset_fingerprint(), encoding="utf-8")
 
     # quick sanity accuracy on train (memorization check is eval-time anyway)
     acc_train = float((lr.predict(X) == labels).mean())

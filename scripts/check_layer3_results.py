@@ -90,11 +90,18 @@ def main() -> int:
     data = load_dataset()
     print(f"\ndataset: train={len(data['train'])} eval={len(data['eval'])} "
           f"(classes {data['classes']})")
+
+    from infra.classifier.model import artifacts_fresh
+
     if not (Path("models/layer3_distilbert/config.json").exists()):
         print("\n[BLOCKED] distilbert model is not trained yet.")
         print("Model training requires your explicit approval — this script will")
         print("never train. Run:  scripts\\train_layer3.py   after you approve.")
         return 2
+    if not artifacts_fresh():
+        print("\n[STALE] trained artifacts do NOT match the current dataset —")
+        print("the dataset changed since these were trained (or a fresh install).")
+        print("Retrain before trusting these numbers.")
 
     clf = ComplexityClassifier()
     stats = evaluate(classifier=clf)
