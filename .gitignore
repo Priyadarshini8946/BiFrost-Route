@@ -26,3 +26,9 @@ Thumbs.db
 # ── Node (later layers: dashboard) ────────────────────────
 node_modules/
 dist/
+# Layer 2 scratch/probe artifacts
+probe_*.py
+probe_*.txt
+reranker_probe.txt
+*_debug_queries.txt
+data_l2_*.log

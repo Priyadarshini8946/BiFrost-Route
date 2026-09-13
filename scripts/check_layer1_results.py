@@ -64,8 +64,13 @@ def check_mysql() -> None:
 
 def check_dynamodb_write_latency() -> None:
     print("\n── G1 · DynamoDB trace write latency (< 50 ms mean) ──")
-    items = seed_traces()  # returns existing 100 traces as plain dicts
+    # Reseed with *fresh* UTC timestamps so the warehouse "today" rollup below
+    # (G3) includes this run's traces; returns the items as plain dicts.
+    items = seed_traces(reseed=True)
     table = dynamodb_resource().Table(table_name())
+    # warm-up ping: exclude TCP/TLS/table-describe cold start from the metric
+    table.get_item(Key={"trace_id": items[0]["trace_id"],
+                        "timestamp": items[0]["timestamp"]})
     lats: List[float] = []
     for item in items:
         t0 = time.perf_counter()

@@ -12,16 +12,16 @@ automatically. Every layer ships with an acceptance gate, not a demo.
 React Dashboard (Vite+Tailwind+Recharts)   ── Layer 7 (later)
 Rails API (policies, budgets, dashboard)   ── Layer 6 (later)
 FastAPI + LangGraph state machine          ── Layer 4 (later)
-Hybrid retrieval: Neo4j+Pinecone+BM25+RR   ── Layer 2 (later)
 DistilBERT complexity classifier           ── Layer 3 (later)
+Hybrid retrieval: Neo4j+Qdrant+BM25+RR  ◀── currently here (Layer 2)
 ─────────────────────────────────────────────────────────
-DATA LAYER (this repo, Layer 1) ◀── currently here
+DATA LAYER (Layer 1, DONE ✅)
  MySQL (policies/budgets/models) · DynamoDB (traces) · Redis (semantic cache) · DuckDB→Redshift warehouse
 ```
 
 ---
 
-## 🗂 Repository layout (Layer 1)
+## 🗂 Repository layout (Layer 1 + 2)
 
 | Path | Purpose |
 |:---|:---|
@@ -29,15 +29,24 @@ DATA LAYER (this repo, Layer 1) ◀── currently here
 | `infra/db/mysql_client.py` | Idempotent schema apply + demo queries |
 | `infra/dynamodb/setup_table.py` | `query_traces` table (GSIs, on-demand, TTL) |
 | `infra/dynamodb/seed_traces.py` | 100 production-shaped traces + "escalations last hour" GSI demo |
-| `infra/cache/embedder.py` | Offline TF-IDF semantic embedder (swap for text-embedding-3-small in L2) |
+| `infra/cache/embedder.py` | Offline TF-IDF semantic embedder (fallback behind the Embedder interface) |
 | `infra/cache/semantic_cache.py` | RediSearch KNN semantic cache, TTL 1h, LRU eviction |
 | `infra/cache/cache_benchmark.py` | Traffic + LRU benchmarks for the 30% gate |
 | `infra/warehouse/duckdb_warehouse.py` | Redshift stand-in: facts, cost-saved rollups |
 | `infra/warehouse/redshift/` | The same schema/queries in Redshift dialect (AWS path) |
 | `infra/data_generation/trace_factory.py` | Deterministic, realistic traffic generator |
-| `scripts/setup_infra.py` | One-shot infra provisioning |
-| `scripts/check_layer1_results.py` | ⭐ Acceptance gate (exits non-zero on any miss) |
-| `tests/` | Offline unit tests + service integration tests |
+| `infra/retrieval/corpus.py` | Layer 2: 500-doc KB corpus + 47 eval queries + concept registry |
+| `infra/retrieval/graph.py` | Neo4j knowledge graph: constraints, ingestion, query→concept→doc Cypher |
+| `infra/retrieval/vector_store.py` | Qdrant vectors (bge-small-en-v1.5 / TF-IDF fallback) |
+| `infra/retrieval/bm25_index.py` | BM25Okapi lexical index |
+| `infra/retrieval/hybrid.py` | RRF fusion + re-rank orchestration, `vector_only()` baseline |
+| `infra/retrieval/reranker.py` | Cross-encoder re-ranker (ort → flashrank → fusion fallback chain) |
+| `scripts/setup_infra.py` | One-shot infra provisioning (Layer 1) |
+| `scripts/setup_layer2.py` | Layer 2 provisioning: graph + vectors + BM25 + reranker warm-up |
+| `scripts/check_layer1_results.py` | ⭐ Layer 1 acceptance gate (exits non-zero on any miss) |
+| `scripts/check_layer2_results.py` | ⭐ Layer 2 acceptance gate (R1–R4, exits non-zero on any miss) |
+| `scripts/debug_layer2.py` | Per-query vector vs hybrid inspection tool |
+| `tests/` | Offline unit tests + service integration tests (L1: 10, L2: 7) |
 
 ## 🚀 Quickstart
 
@@ -52,8 +61,14 @@ uv pip install --python .venv\Scripts\python.exe -r requirements.txt
 # 3. Provision Layer 1 (Redis config, DynamoDB table + 100 traces, MySQL schema, warehouse)
 .venv\Scripts\python.exe scripts\setup_infra.py
 
-# 4. ⭐ Check the acceptance results
+# 4. Provision Layer 2 (Neo4j graph + Qdrant vectors + BM25 + reranker warm-up)
+.venv\Scripts\python.exe scripts\setup_layer2.py
+
+# 4b. ⭐ Check the Layer 1 acceptance results
 .venv\Scripts\python.exe scripts\check_layer1_results.py
+
+# 4c. ⭐ Check the Layer 2 acceptance results
+.venv\Scripts\python.exe scripts\check_layer2_results.py
 
 # 5. Tests (offline unit tests; add BIFROST_INTEGRATION=1 for live-service tests)
 .venv\Scripts\python.exe -m pytest -q
@@ -72,6 +87,26 @@ $env:BIFROST_INTEGRATION="1"; .venv\Scripts\python.exe -m pytest -q
 | G3b | Cost savings vs frontier baseline | > $0 | **$0.1622 / 57.05%** | ✅ |
 
 Results are printed per gate and persisted to `data/layer1_results.json`. `check_layer1_results.py` exits non-zero on any miss (CI-ready).
+
+## ✅ Layer 2 acceptance targets (Retrieval)
+
+Layer 2 turns plain retrieval into a production hybrid engine:
+
+- **500-doc deterministic corpus** — 25 knowledge-base families × 20 variants; every variant is a *distinct* article (unique title + angle, same topic), so evaluation measures real retrieval quality, not duplicate-flooding.
+- **Neo4j knowledge graph** — Document / Concept / Query nodes, `ASKS_ABOUT` + `HAS_CONCEPT` + `RELATED_TO`; a query is merged as a node so repeated asks are visible in the graph.
+- **Qdrant vector store** — fastembed `BAAI/bge-small-en-v1.5` ONNX (384-dim; TF-IDF fallback offline).
+- **BM25Okapi** — lexical index with stopword tokenizer.
+- **Reciprocal Rank Fusion (RRF, k=60)** over graph + vector + BM25 → 24-candidate pool.
+- **Cross-encoder re-ranker** — the plan's exact `cross-encoder/ms-marco-MiniLM-L-6-v2` on ONNX (`rerankers` ort backend; full-size, real discriminator), with flashrank + calibrated score-fusion as offline fallbacks.
+
+| # | Metric | Target | Measured (2026-09-13) | Status |
+|:--|:---|:---|:---|:---|
+| R1 | Coverage@5 (relevant doc in top-5) | ≥ 95% | **100.0%** | ✅ |
+| R2 | Re-ranked precision@5 | ≥ 85% (plan: 90%) | **0.953** | ✅ |
+| R3 | Re-rank gain over vector-only (0.902) | ≥ +0.05 | **+0.051** | ✅ |
+| R4 | Mean end-to-end latency (CPU cross-encoder) | < 3 s | **2.37 s** | ✅ |
+
+Reproduce: `.venv\Scripts\python.exe scripts\check_layer2_results.py` (builds index, runs 47 eval queries, persists `data/layer2_results.json`).
 
 ## 🖥 Manual steps (do once)
 
