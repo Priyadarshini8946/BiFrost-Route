@@ -11,9 +11,9 @@ automatically. Every layer ships with an acceptance gate, not a demo.
 ```
 React Dashboard (Vite+Tailwind+Recharts)   ── Layer 7 (later)
 Rails API (policies, budgets, dashboard)   ── Layer 6 (later)
-FastAPI + LangGraph state machine          ── Layer 4 (later)
-DistilBERT complexity classifier           ── Layer 3 (later)
-Hybrid retrieval: Neo4j+Qdrant+BM25+RR  ◀── currently here (Layer 2)
+FastAPI + LangGraph state machine          ◀── currently here (Layer 4, ALL GREEN)
+DistilBERT complexity classifier           ── Layer 3 (training — user-run)
+Hybrid retrieval: Neo4j+Qdrant+BM25+RR  ◀── done (Layer 2)
 ─────────────────────────────────────────────────────────
 DATA LAYER (Layer 1, DONE ✅)
  MySQL (policies/budgets/models) · DynamoDB (traces) · Redis (semantic cache) · DuckDB→Redshift warehouse
@@ -41,6 +41,13 @@ DATA LAYER (Layer 1, DONE ✅)
 | `infra/retrieval/bm25_index.py` | BM25Okapi lexical index |
 | `infra/retrieval/hybrid.py` | RRF fusion + re-rank orchestration, `vector_only()` baseline |
 | `infra/retrieval/reranker.py` | Cross-encoder re-ranker (ort → flashrank → fusion fallback chain) |
+| `infra/routing/state.py` | Layer 4: typed RouteState flowing through the LangGraph |
+| `infra/routing/graph.py` | Layer 4: LangGraph state machine (9 nodes, bounded escalation) |
+| `infra/routing/router.py` | Layer 4: RouteEngine facade — policy/budget/cache/trace/warehouse wiring |
+| `infra/routing/grader.py` | Layer 4: RAGAS-proxy faithfulness gate (L5 swaps in real RAGAS) |
+| `infra/routing/llm.py` | Layer 4: LLM clients (Groq/Gemini) + deterministic dry-run mock |
+| `api/app.py` | Layer 4: FastAPI — `/route`, `/health`, `/traces` |
+| `scripts/setup_layer4.py` | Layer 4 provisioning + warm-up + API liveness |
 | `scripts/setup_infra.py` | One-shot infra provisioning (Layer 1) |
 | `scripts/setup_layer2.py` | Layer 2 provisioning: graph + vectors + BM25 + reranker warm-up |
 | `scripts/check_layer1_results.py` | ⭐ Layer 1 acceptance gate (exits non-zero on any miss) |
@@ -107,6 +114,40 @@ Layer 2 turns plain retrieval into a production hybrid engine:
 | R4 | Mean end-to-end latency (CPU cross-encoder) | < 3 s | **2.37 s** | ✅ |
 
 Reproduce: `.venv\Scripts\python.exe scripts\check_layer2_results.py` (builds index, runs 47 eval queries, persists `data/layer2_results.json`).
+
+## ✅ Layer 4 acceptance targets (Routing)
+
+Layer 4 is the **adaptive router**: a LangGraph state machine behind FastAPI
+that classifies complexity (Layer 3), retrieves grounding (Layer 2), enforces
+policy + budget + cache (Layer 1), calls the right-tier model, checks the
+answer with a RAGAS-proxy faithfulness gate, and escalates bounded by the
+policy's max hops.
+
+Pipeline: `classify → cache_lookup → retrieve → select_model → budget_check →
+generate → grade → (escalate ↺) → record (DynamoDB trace + warehouse fact)`.
+
+| # | Metric | Target | Measured (2026-09-16) | Status |
+|:--|:---|:---|:---|:---|
+| G1 | Policy fidelity (monitored to the model-mapped tier, 60-query workload) | 60/60 | **60/60** | ✅ |
+| G2 | Bounded escalation (hallucination → ≤ 2 hops to frontier; grounded → 0) | esc ≤ 2 | **esc=2, tier=frontier** | ✅ |
+| G3 | Semantic cache short-circuit (repeat query: hit, no LLM call, $0) | hit + $0 | **hit, sim=1.0, $0** | ✅ |
+| G4 | Budget enforcement (team within cap routed; exhausted refused) | enforced | **eng-core ok, $257.69 remaining** | ✅ |
+| G5 | Trace fidelity (DynamoDB cost == registry math, traced per route) | exact | **match=True** | ✅ |
+| G6 | Economics — adaptive vs frontier-only baseline (60-query cold path) | ≥ 50% saved | **67.8% saved ($0.05 vs $0.16)** | ✅ |
+| G7 | API SLA — `POST /route` p95 (dry-run, CPU) | < 3 s | **p95 ≈ 1.0 s** | ✅ |
+
+Modes: without Groq/Gemini keys the router runs a **deterministic dry-run
+mock** (every gate passes with zero cost + zero keys); set `GROQ_API_KEY` /
+`GEMINI_API_KEY` in `.env` and `BIFROST_DRY_RUN=0` for real model calls.
+
+Reproduce: `.venv\Scripts\python.exe scripts\check_layer4_results.py` and
+`scripts\setup_layer4.py` (warm-up + API liveness). API server:
+`.venv\Scripts\python.exe -m uvicorn api.app:app --port 8077`.
+
+> **Layer 3 classifier handshake** — the router auto-selects the trained
+> DistilBERT (`distilbert-onnx`) once your training artifacts land with a
+> fresh `dataset_marker`; until then it uses the TF-IDF fallback. Layer 3 and
+> Layer 4 gates are re-verified together after your training completes.
 
 ## 🖥 Manual steps (do once)
 

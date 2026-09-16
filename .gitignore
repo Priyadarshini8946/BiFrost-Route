@@ -43,3 +43,8 @@ data_l2_*.log
 # Office lock files + scratch probes
 ~$*.docx
 debug_l3_classifier.py
+
+# Layer 4 scratch probes
+debug_l4_*.py
+data/debug_l4_*.log
+data/debug_l4_behavior.log

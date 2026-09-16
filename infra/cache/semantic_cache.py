@@ -84,7 +84,19 @@ class SemanticCache:
 
     # ── core ops ────────────────────────────────────────────────────────
     def get(self, query: str) -> Dict[str, Any]:
-        """Semantic lookup. Returns hit/miss + similarity and (on hit) response."""
+        """Semantic lookup. Exact (hash) match first — an identical query can
+        never miss even when its terms fall outside the TF-IDF vocabulary —
+        then RediSearch vector search for paraphrases."""
+        exact_key = CACHE_PREFIX + hashlib.sha256(query.encode("utf-8")).hexdigest()
+        raw = self.r.hgetall(exact_key)
+        if raw:
+            response = raw.get(b"response", b"").decode("utf-8", errors="replace")
+            matched = raw.get(b"query", b"").decode("utf-8", errors="replace")
+            self.hits += 1
+            self.r.expire(exact_key, self.ttl)  # refresh TTL on hit
+            return {"hit": True, "similarity": 1.0, "response": response,
+                    "matched_query": matched, "key": exact_key, "exact": True}
+
         vec = self.embedder.embed(query)
         q = (
             Query("*=>[KNN 5 @embedding $vec AS score]")
