@@ -62,10 +62,14 @@ class RouteEngine:
         policy_version: Optional[int] = None,
         persist_corpus: Optional[Path] = None,
         use_cache: bool = True,
+        pin_model: Optional[str] = None,
     ) -> None:
         self.team = team
         self.policy_version = policy_version
         self.use_cache = use_cache
+        # A/B-test seam: pin_model forces every routed query onto one model
+        # (used by Layer-5's frontier-only parity baseline). None = adaptive.
+        self.pin_model = pin_model
         self.llm = make_llm(force_dry_run=force_dry_run)
         self.llm_mode = "mock" if isinstance(self.llm, MockLLM) else "real"
         self.grader = FaithfulnessGrader()
@@ -240,7 +244,7 @@ class RouteEngine:
             if d is not None:
                 contexts.append({
                     "doc_id": doc_id, "title": d["title"], "body": d["body"],
-                    "relevance": score,
+                    "relevance": score, "family": d.get("family", ""),
                 })
         s.contexts = contexts
         s.retrieved_docs = [c["doc_id"] for c in contexts]
@@ -254,7 +258,11 @@ class RouteEngine:
         mapped = s.complexity if s.complexity in ("simple", "medium", "complex") \
             else "simple"
         s.complexity = mapped
-        s.model = self.policy["model_mapping"][mapped]
+        if self.pin_model is not None:
+            # A/B parity baseline: same query, forced model, normal cost math
+            s.model = self.pin_model
+        else:
+            s.model = self.policy["model_mapping"][mapped]
         s.tier = MODEL_COSTS[s.model]["tier"]
         s.provider = MODEL_COSTS[s.model]["provider"]
         s.prompt_tokens = self._estimate_prompt_tokens(s)
@@ -286,7 +294,8 @@ class RouteEngine:
         ctx = self._format_context(s)
         system = ("You are Bifrost, a grounded support assistant. Answer ONLY "
                   "from the provided context and cite the document. "
-                  "@@CTX@@\n%s\n@@ENDCTX@@" % ctx)
+                  "@@HOP %d@@\n@@CTX@@\n%s\n@@ENDCTX@@"
+                  % (s.escalation_count + 1, ctx))
         t0 = time.perf_counter()
         s.answer = self.llm.complete(s.model, system, s.query)
         s.llm_latency_ms = round((time.perf_counter() - t0) * 1000.0, 2)

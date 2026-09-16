@@ -11,7 +11,8 @@ automatically. Every layer ships with an acceptance gate, not a demo.
 ```
 React Dashboard (Vite+Tailwind+Recharts)   ── Layer 7 (later)
 Rails API (policies, budgets, dashboard)   ── Layer 6 (later)
-FastAPI + LangGraph state machine          ◀── currently here (Layer 4, ALL GREEN)
+RAGAS quality harness (evaluation)         ◀── currently here (Layer 5)
+FastAPI + LangGraph state machine          ◀── done (Layer 4)
 DistilBERT complexity classifier           ── Layer 3 (training — user-run)
 Hybrid retrieval: Neo4j+Qdrant+BM25+RR  ◀── done (Layer 2)
 ─────────────────────────────────────────────────────────
@@ -48,6 +49,9 @@ DATA LAYER (Layer 1, DONE ✅)
 | `infra/routing/llm.py` | Layer 4: LLM clients (Groq/Gemini) + deterministic dry-run mock |
 | `api/app.py` | Layer 4: FastAPI — `/route`, `/health`, `/traces` |
 | `scripts/setup_layer4.py` | Layer 4 provisioning + warm-up + API liveness |
+| `infra/eval/ragas_harness.py` | Layer 5: RAGAS harness (LLM judge → offline proxy) |
+| `scripts/check_layer5_results.py` | Layer 5: quality gates L5-1..L5-7, CI-ready |
+| `scripts/setup_layer5.py` | Layer 5 provisioning + judge resolution + smoke |
 | `scripts/setup_infra.py` | One-shot infra provisioning (Layer 1) |
 | `scripts/setup_layer2.py` | Layer 2 provisioning: graph + vectors + BM25 + reranker warm-up |
 | `scripts/check_layer1_results.py` | ⭐ Layer 1 acceptance gate (exits non-zero on any miss) |
@@ -148,6 +152,37 @@ Reproduce: `.venv\Scripts\python.exe scripts\check_layer4_results.py` and
 > DistilBERT (`distilbert-onnx`) once your training artifacts land with a
 > fresh `dataset_marker`; until then it uses the TF-IDF fallback. Layer 3 and
 > Layer 4 gates are re-verified together after your training completes.
+
+## ✅ Layer 5 acceptance targets (RAGAS quality harness)
+
+Layer 5 proves the plan's headline — **"adaptive routing saves cost AND
+maintains quality"** — by scoring the Layer-4 router's answers with
+RAGAS-family metrics on the Layer-2 eval workload (47 well-formed queries,
+retrieval quality already proven):
+
+| # | Metric | Target | Measured (2026-09-16) | Status |
+|:--|:---|:---|:---|:---|
+| L5-1 | Answer faithfulness (grounded in retrieved context) | ≥ 0.80 | **1.000** | ✅ |
+| L5-2 | Answer relevancy (does the answer address the question) | ≥ 0.55 | **0.678** | ✅ |
+| L5-3 | Context precision (relevant context ranked first, family ground truth) | ≥ 0.60 | **0.936** | ✅ |
+| L5-4 | Quality parity: adaptive vs frontier-only on same queries | \|Δ\| ≤ 0.05 | **0.000** | ✅ |
+| L5-5 | Economics with quality held (adaptive ≤ 60% of frontier) | ≤ 0.60 | **14.3%** | ✅ |
+| L5-6 | RAGAS-gated escalation re-route catches hallucinations | esc ≤ 2 → frontier, faithful | **esc=2, fx=1.000** | ✅ |
+| L5-7 | Judge mode (real LLM when key present, offline proxy otherwise) | runs | **proxy** | ✅ |
+
+Two judge modes — **no model is ever trained here** (RAGAS is an evaluation
+library):
+
+- **Real judge**: `ragas` 0.4.3 calls Groq/Gemini as the LLM judge for
+  faithfulness + context_precision. Enabled automatically once `GROQ_API_KEY`
+  or `GEMINI_API_KEY` is set (same key as Layer 4).
+- **Proxy judge (default)**: deterministic and offline — bge-small cosine for
+  answer relevancy, L2's family ground truth for context precision, the
+  Layer-4 grader for faithfulness. Every gate runs without any key.
+
+Reproduce: `.venv\Scripts\python.exe scripts\check_layer5_results.py`
+(7 gates, CI-ready exit code, persists `data/layer5_results.json`);
+provision/warm: `scripts\setup_layer5.py`.
 
 ## 🖥 Manual steps (do once)
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from typing import Any, Dict, Optional
 
@@ -108,9 +109,18 @@ class MockLLM:
         # Deterministic failure simulator (dry-run only): a query containing
         # __HALLUCINATE__ makes the mock return ungrounded text so the
         # escalation path is exercised exactly like with a hallucinating LLM.
+        # The router tags each attempt with "@@HOP n@@" — before the final
+        # (frontier) hop the model "hallucinates"; on the frontier retry it
+        # re-grounds in the context, exactly like a real capable model would
+        # recover after escalation feedback.
         if "__HALLUCINATE__" in user:
-            return ("The answer is a complete fabrication: the moon is made of "
-                    "cheese and Bifrost runs on quantum crystals.")
+            hop = 0
+            m = re.search(r"@@HOP\s+(\d+)@@", system)
+            if m:
+                hop = int(m.group(1))
+            if hop == 0 or hop < 3:  # no tag → legacy behavior: fabricate
+                return ("The answer is a complete fabrication: the moon is made of "
+                        "cheese and Bifrost runs on quantum crystals.")
         # The router injects a compact context block "@@CTX@@ ... @@ENDCTX@@".
         title, body = "", ""
         marker = "@@CTX@@"
